@@ -80,6 +80,7 @@ end
 % simulate?
 
 % addpath for yalmip
+% required for IRIS
 addpath(genpath('/Users/pflomacpro/drake-distro2/drake-distro/yalmip'))
 
 end
