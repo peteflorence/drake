@@ -12,7 +12,7 @@ if nargin < 3
 end
 
 nq = obj.getNumPositions();
-q0 = walking_plan_data.x0(1:nq);
+q0 = walking_plan_data.q0;
 qstar = xstar(1:nq);
 
 % time spacing of samples for IK
@@ -42,6 +42,7 @@ cost = double(cost);
 ikoptions = IKoptions(obj);
 ikoptions = ikoptions.setQ(diag(cost(1:obj.getNumPositions)));
 
+q = zeros(obj.getNumPositions(), length(ts));
 htraj = [];
 full_IK_calls = 0;
 for i=1:length(ts)

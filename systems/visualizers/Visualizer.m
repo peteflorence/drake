@@ -12,9 +12,16 @@ classdef Visualizer < DrakeSystem
 
   methods
     function obj=Visualizer(input_frame)
-      typecheck(input_frame,'CoordinateFrame');
-      obj=obj@DrakeSystem(0,0,input_frame.dim,0,true);
-      obj = setInputFrame(obj,input_frame);
+      if isempty(input_frame)
+        dim = 0;
+      else
+        typecheck(input_frame,'CoordinateFrame');
+        dim = input_frame.dim;
+      end      
+      obj=obj@DrakeSystem(0,0,dim,0,true);
+      if ~isempty(input_frame)
+        obj = setInputFrame(obj,input_frame);
+      end
     end
 
     function x0 = getInitialState(obj)
@@ -77,9 +84,14 @@ classdef Visualizer < DrakeSystem
       defaultOptions.lcmlog = [];
       options = applyDefaults(options,defaultOptions);
 
+      if ishandle(89)
+        position = get(89, 'Position');
+      else
+        position = [560, 400];
+      end
       f = sfigure(89);
       set(f, 'Visible', 'off');
-      set(f, 'Position', [560 400 560 70]);
+      set(f, 'Position', [position(1:2), 560, 70]);
 
       tspan = xtraj.getBreaks();
       t0 = tspan(1);
@@ -245,8 +257,12 @@ classdef Visualizer < DrakeSystem
 
       set(f, 'Position', [560 400 560 20 + 30*rows]);
       resize_gui();
-      update_display(slider{1});
-
+      if isempty(state_dims), 
+        obj.drawWrapper(0,[]); 
+      else 
+        update_display(slider{1});
+      end
+      
       function resize_gui(source, eventdata)
         p = get(gcf,'Position');
         width = p(3);

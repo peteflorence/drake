@@ -46,9 +46,11 @@ swing2.pos(4:6) = swing1.pos(4:6) + angleDiff(swing1.pos(4:6), swing2.pos(4:6));
 
 xy_dist = norm(swing2.pos(1:2) - swing1.pos(1:2));
 
-% The terrain slice is a 2xN matrix, where the first row is distance along the straight line path from swing1 to swing2 and the second row is height above the z position of swing1.
+% The terrain slice is a 2xN matrix, where the first row is distance along
+% the straight line path from swing1 to swing2 and the second row is global
+% z height of the terrain at that point along the line
 terrain_slice = double(swing2.terrain_pts);
-terrain_slice = [[0;0], terrain_slice, [xy_dist; 0]];
+terrain_slice = [[0;swing1.pos(3)], terrain_slice, [xy_dist; swing2.pos(3)]];
 terrain_pts_in_local = [terrain_slice(1,:); zeros(1, size(terrain_slice, 2)); 
                         terrain_slice(2,:)];
 
@@ -60,7 +62,7 @@ T_local_to_world = [[rotmat(atan2(swing2.pos(2) - swing1.pos(2), swing2.pos(1) -
 % Determine how much of a forward step this is
 swing_distance_in_local = (swing2.pos(1:2) - swing1.pos(1:2))' * (rotmat(stance.pos(6)) * [1;0]);
 
-if swing_distance_in_local > 0
+if swing_distance_in_local > MIN_DIST_FOR_TOE_OFF
   toe_off_angle = DEFAULT_FOOT_PITCH;
 else
   toe_off_angle = 0;
@@ -154,13 +156,15 @@ foot_origin_knots = struct('t', zmp_knots(end).t, ...
                            'toe_off_allowed', struct(swing_foot_name, swing_distance_in_local >= MIN_DIST_FOR_TOE_OFF, stance_foot_name, false));
 
 function [pose, q0] = solve_for_pose(constraints, q0)
-  constraint_ptrs = {};
-  for k = 1:length(constraints)
-    constraint_ptrs{end+1} = constraints{k}.mex_ptr;
-  end
-  [q0, info] = inverseKin(biped,q0,q0,constraint_ptrs{:},ikoptions);
+  [q0, info] = inverseKin(biped,q0,q0,constraints{:},ikoptions);
   if info >= 10
-    error('Drake:planSwingPitched', 'The foot pose IK problem could not be solved. This should not happen and likely indicates a bug in the constraints.');
+    % try again?
+    [q0, info] = inverseKin(biped,q0,q0,constraints{:},ikoptions);
+    if info < 10
+      warning('Whoa...tried inverseKin again and got a different result...');
+    else
+      error('Drake:planSwingPitched', 'The foot pose IK problem could not be solved. This should not happen and likely indicates a bug in the constraints.');
+    end
   end
   if DEBUG
     v.draw(0, q0);
@@ -178,8 +182,8 @@ function add_foot_origin_knot(swing_pose, speed)
   cartesian_distance = norm(foot_origin_knots(end).(swing_foot_name)(1:3) - foot_origin_knots(end-1).(swing_foot_name)(1:3));
   sole1 = rotmat2rpy(rpy2rotmat(foot_origin_knots(end-1).(swing_foot_name)(4:6)) * T_sole_to_foot(1:3,1:3));
   sole2 = rotmat2rpy(rpy2rotmat(foot_origin_knots(end).(swing_foot_name)(4:6)) * T_sole_to_foot(1:3,1:3));
-  yaw_distance = abs(sole2(3) - sole1(3));
-  pitch_distance = abs(sole2(2) - sole1(2));
+  yaw_distance = abs(angleDiff(sole1(3), sole2(3)));
+  pitch_distance = abs(angleDiff(sole1(2), sole2(2)));
   dt = max([cartesian_distance / speed,...
             yaw_distance / FOOT_YAW_RATE,...
             pitch_distance / FOOT_PITCH_RATE]);
@@ -212,8 +216,12 @@ constraints = {posture_constraint,...
 add_foot_origin_knot(pose);
 
 % Set the target velocities of the two apex poses based on the total distance traveled
-foot_origin_knots(end).(swing_foot_name)(7:12) = (foot_origin_knots(end).(swing_foot_name)(1:6) - foot_origin_knots(end-1).(swing_foot_name)(1:6)) / (foot_origin_knots(end).t - foot_origin_knots(end-1).t);
-foot_origin_knots(end-1).(swing_foot_name)(7:12) = (foot_origin_knots(end).(swing_foot_name)(1:6) - foot_origin_knots(end-1).(swing_foot_name)(1:6)) / (foot_origin_knots(end).t - foot_origin_knots(end-1).t);
+foot_origin_knots(end).(swing_foot_name)(7:9) = (foot_origin_knots(end).(swing_foot_name)(1:3) - foot_origin_knots(end-1).(swing_foot_name)(1:3)) / (foot_origin_knots(end).t - foot_origin_knots(end-1).t);
+foot_origin_knots(end-1).(swing_foot_name)(7:9) = (foot_origin_knots(end).(swing_foot_name)(1:3) - foot_origin_knots(end-1).(swing_foot_name)(1:3)) / (foot_origin_knots(end).t - foot_origin_knots(end-1).t);
+% angles require unwrapping to get the correct velocities
+foot_origin_knots(end).(swing_foot_name)(10:12) = angleDiff(foot_origin_knots(end-1).(swing_foot_name)(4:6), foot_origin_knots(end).(swing_foot_name)(4:6)) / (foot_origin_knots(end).t - foot_origin_knots(end-1).t);
+foot_origin_knots(end-1).(swing_foot_name)(10:12) = angleDiff(foot_origin_knots(end-1).(swing_foot_name)(4:6), foot_origin_knots(end).(swing_foot_name)(4:6)) / (foot_origin_knots(end).t - foot_origin_knots(end-1).t);
+
 
 % Landing knot
 add_foot_origin_knot(swing2_origin_pose, min(params.step_speed, MAX_LANDING_SPEED)/2);

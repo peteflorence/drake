@@ -21,7 +21,12 @@ if (eigen3_FOUND)
   # todo: use this again once I can assume everyone has CMAKE version >= 2.8.8
   #add_mex(drakeUtil OBJECT drakeUtil.cpp)
 
+  pods_install_headers(drakeUtil.h DESTINATION drake)
   pods_install_libraries(drakeUtil)
+  pods_install_pkg_config_file(drake-util
+    LIBS -ldrakeUtil
+    REQUIRES
+    VERSION 0.0.1)
 
   add_library(drakeGradientUtil SHARED drakeGradientUtil.cpp)
   pods_install_libraries(drakeGradientUtil)
@@ -33,13 +38,15 @@ if (eigen3_FOUND)
   pods_install_headers(drakeGeometryUtil.h DESTINATION drake)
 
   pods_install_headers(drakeFloatingPointUtil.h DESTINATION drake)
+  
+  pods_install_headers(GradientVar.h DESTINATION drake)
 endif()
 
 add_subdirectory(test)
 
 
 # Mex debugging tools:
-if (NOT WIN32)
+if (0) #NOT WIN32)
 add_mex(debugMex SHARED debugMexLib.cpp)
 target_link_libraries(debugMex -ldl)
 #set_property( SOURCE debugMexLib.cpp PROPERTY COMPILE_FLAGS -DMX_COMPAT_32 )
