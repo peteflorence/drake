@@ -138,3 +138,4 @@ examples/PR2/pr2_description/meshes/tilting_laser_v0/tilting_hokuyo.wrl
 examples/PR2/pr2_description/meshes/torso_v0/torso_lift.wrl
 examples/PR2/pr2_description/meshes/upper_arm_v0/forearm_roll.wrl
 results_testRunning.mat
+examples/ProjectWind
