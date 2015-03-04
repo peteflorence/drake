@@ -7,13 +7,13 @@ function dynamicsGradientsTest()
 oldpath=addpath('..');
 load dynamicsGradients.mat;
 
-f1=cell(1,4);
+f1=cell(1,2);
 [f1{:}]=geval(fun,in{:},struct('grad_method','user'));
 
-f2=cell(1,4);
+f2=cell(1,2);
 [f2{:}]=geval(fun,in{:},struct('grad_method','taylorvar'));
 
-for i=1:4
+for i=1:2
   if (any(abs(f1{i}(:)-f2{i}(:))>1e-5))
     path(oldpath);
     error('gradients don''t match!');
