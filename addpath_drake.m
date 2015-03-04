@@ -79,7 +79,9 @@ end
 % todo: try setting this before simulating, then resetting it after the
 % simulate?
 
+
 % add yalmip path
 addpath(genpath('/Users/pflomacpro/drake-distro3/drake-distro/yalmip'))
+
 
 end
