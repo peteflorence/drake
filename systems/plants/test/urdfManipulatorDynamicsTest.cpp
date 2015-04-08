@@ -16,6 +16,7 @@ int main(int argc, char* argv[])
     cerr << "ERROR: Failed to load model from " << argv[1] << endl;
     return -1;
   }
+  cout << "=======" << endl;
 
   // the order of the bodies may be different in matlab, so print it out once here
   cout << model->num_bodies << endl;
@@ -49,7 +50,7 @@ int main(int argc, char* argv[])
   cout << model->B << endl;
 
   if (model->loops.size()>0) {
-    auto phi = model->positionConstraints<double>(1);
+    auto phi = model->positionConstraintsNew<double>(1);
     cout << phi.value() << endl;
     cout << phi.gradient().value() << endl;
   }

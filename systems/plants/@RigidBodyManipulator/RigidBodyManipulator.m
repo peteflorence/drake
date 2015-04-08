@@ -39,7 +39,7 @@ classdef RigidBodyManipulator < Manipulator
   properties (Access=public)  % i think these should be private, but probably needed to access them from mex? - Russ
     featherstone = [];
     B = [];
-    mex_model_ptr = 0;
+    mex_model_ptr = nullPointer();
     dirty = true;
     collision_filter_groups;  % map of CollisionFilterGroup objects
   end
@@ -82,7 +82,7 @@ classdef RigidBodyManipulator < Manipulator
 
   methods (Static)
     function obj = loadobj(obj)
-      obj.mex_model_ptr = 0;
+      obj.mex_model_ptr = nullPointer();
       obj = compile(obj);
       % NOTEST
     end
@@ -879,7 +879,7 @@ classdef RigidBodyManipulator < Manipulator
       end
       
       if (model.num_contact_pairs>0)
-        warning('Drake:RigidBodyManipulator:UnsupportedContactPoints','Contact is not supported by the dynamics methods of this class.  Consider using TimeSteppingRigidBodyManipulator or HybridPlanarRigidBodyManipulator');
+        warnOnce(model.warning_manager,'Drake:RigidBodyManipulator:UnsupportedContactPoints','Contact is not supported by the dynamics methods of this class.  Consider using TimeSteppingRigidBodyManipulator or HybridPlanarRigidBodyManipulator');
       end
 
 %      H = manipulatorDynamics(model,zeros(model.num_positions,1),zeros(model.num_positions,1));
@@ -1566,7 +1566,7 @@ classdef RigidBodyManipulator < Manipulator
 
       m = 0;
       for i=1:length(model.body)
-        if robotnum == -1 || model.body(i).robotnum == robotnum
+        if isBodyPartOfRobot(model, model.body(i), robotnum)
           bm = model.body(i).mass;
           m = m + bm;
         end
@@ -2142,7 +2142,7 @@ classdef RigidBodyManipulator < Manipulator
       pval=[]; pmin=[]; pmax=[];
       index=1;
       for i=1:min(numel(model.name),numel(model.param_db))
-        pn = fieldnames(model.param_db{i});
+        pn = fieldnames(struct(model.param_db{i}));
         frames{i} = CoordinateFrame([model.name{i},'Params'],numel(pn),'p',pn);
         for j=1:numel(pn)
           pval=vertcat(pval,model.param_db{i}.(pn{j}).value);
@@ -2440,7 +2440,7 @@ classdef RigidBodyManipulator < Manipulator
     end
 
     function id = findCollisionFilterGroupID(model,collision_fg_name)
-        id = uint16(find(strcmp(model.collision_filter_groups.keys(),collision_fg_name)));
+        id = find(strcmp(model.collision_filter_groups.keys(),collision_fg_name));
         if isempty(id)
           error('RigidBodyManipulator:findCollisionFilterGroupID', ...
                 'Unable to find collision filter group, %s',collision_fg_name);

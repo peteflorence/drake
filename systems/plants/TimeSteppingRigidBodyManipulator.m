@@ -17,6 +17,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
     enable_fastqp; % whether we use the active set LCP
     lcmgl_contact_forces_scale = 0;  % <=0 implies no lcmgl
     z_inactive_guess_tol = .01;
+    gurobi_present = false;
   end
 
   methods
@@ -118,6 +119,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
 
     function model = compile(model)
       w = warning('off','Drake:RigidBodyManipulator:UnsupportedContactPoints');
+      model.gurobi_present = checkDependency('gurobi');
       model.manip = model.manip.compile();
       warning(w);
 
@@ -183,7 +185,11 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
       if (nargout>1)
         [obj,z,Mqdn,wqdn,dz,dMqdn,dwqdn] = solveLCP(obj,t,x,u);
       else
-        [obj,z,Mqdn,wqdn] = solveLCP(obj,t,x,u);
+        if (obj.gurobi_present && obj.manip.only_loops && obj.manip.mex_model_ptr~=0 && ~obj.position_control)
+           [obj,z,Mqdn,wqdn] = solveMexLCP(obj,t,x,u);
+        else
+          [obj,z,Mqdn,wqdn] = solveLCP(obj,t,x,u);
+        end
       end
 
       num_q = obj.manip.num_positions;
@@ -227,6 +233,16 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
              all(u==obj.LCP_cache.data.u) && num_args_out <= obj.LCP_cache.data.nargout);
     end
 
+    function [obj, z, Mqdn, wqdn] = solveMexLCP(obj, t, x, u)
+        num_q = obj.manip.num_positions;
+        q=x(1:num_q); 
+        v=x(num_q+(1:obj.manip.num_velocities));
+        kinsol = doKinematics(obj,q);
+        [phiC,~,~,~,~,~,~,mu,n,D] = obj.manip.contactConstraints(kinsol,true);
+        [z, Mqdn, wqdn] = setupLCPmex(obj.manip.mex_model_ptr, q, v, u, phiC, n, D, obj.timestep, obj.z_inactive_guess_tol, obj.LCP_cache.data.z);
+        obj.LCP_cache.data.z = z;
+    end
+    
     function [obj,z,Mqdn,wqdn,dz,dMqdn,dwqdn] = solveLCP(obj,t,x,u)
 %       global active_set_fail_count 
       % do LCP time-stepping
@@ -344,16 +360,17 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
           JL = zeros(0,num_q^2);
         end
         
-        if (nContactPairs > 0)
+        if (nContactPairs > 0)                   
           if (nargout>4)
             [phiC,normal,d,xA,xB,idxA,idxB,mu,n,D,dn,dD] = obj.manip.contactConstraints(kinsol,true);
           else
             [phiC,normal,d,xA,xB,idxA,idxB,mu,n,D] = obj.manip.contactConstraints(kinsol,true);
-          end
-          
+          end  
+
           if isempty(possible_contact_indices)
             possible_contact_indices = (phiC+h*n*qd) < obj.z_inactive_guess_tol;
           end
+          
           nC = sum(possible_contact_indices);
           mC = length(D);
           
@@ -361,7 +378,6 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
           lb = zeros(nL+nP+(mC+2)*nC,1);
           ub = Big*ones(nL+nP+(mC+2)*nC,1);
           D = vertcat(D{:});
-
           % just keep the likely contacts (and store data to check the unlikely):
           phi_check = [phi_check;phiC(~possible_contact_indices)];
           J_check = [J_check; n(~possible_contact_indices,:)];
@@ -369,6 +385,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
           n = n(possible_contact_indices,:);
           D = D(repmat(possible_contact_indices,mC,1),:);
           mu = mu(possible_contact_indices,:);
+      
           if isempty(obj.LCP_cache.data.possible_contact_indices) || any(obj.LCP_cache.data.possible_contact_indices~=possible_contact_indices)
               possible_indices_changed = true;
           end
@@ -448,7 +465,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
         Hinv = inv(H);
         wqdn = qd + h*Hinv*tau;
         Mqdn = Hinv*J';
-
+        
         if (nargout>4)
           dM = zeros(size(M,1),size(M,2),1+2*num_q+obj.num_u);
           dw = zeros(size(w,1),1+2*num_q+obj.num_u);
@@ -558,42 +575,26 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
           end
         end
         
-        % check gradients
-        %      xdn = M;
-        %      if (nargout>1)
-        %        df = reshape(dM,prod(size(M)),[]);
-        %      end
-        %      return;
-
-        z = zeros(nL+nP+(mC+2)*nC,1); 
-        if possible_indices_changed || isempty(obj.LCP_cache.data.z)
-          z_inactive = true(nL+nP+(mC+2)*nC,1);
-          M_active = z_inactive;
-          obj.LCP_cache.data.z = z;
-        else
-          z_inactive = obj.LCP_cache.data.z>lb+1e-8;
-          % use conservative guess of M_active to avoid occasional numerical issues
-          % when M*z_inactive + w > 1e-8 by a small amount
-          M_active = z_inactive;
-        end
-
         QP_FAILED = true;
-        
-        if obj.enable_fastqp
+        if ~possible_indices_changed && obj.enable_fastqp
+          z = zeros(nL+nP+(mC+2)*nC,1);
+          if isempty(obj.LCP_cache.data.z) || numel(obj.LCP_cache.data.z) ~= numel(lb)
+            z_inactive = true(nL+nP+(mC+2)*nC,1);
+            obj.LCP_cache.data.z = z;
+          else
+            z_inactive = obj.LCP_cache.data.z>lb+1e-8;
+            % use conservative guess of M_active to avoid occasional numerical issues
+            % when M*z_inactive + w > 1e-8 by a small amount
+          end
           n_z_inactive = sum(z_inactive);
           if n_z_inactive > 0
-            Aeq = M(M_active,z_inactive); 
-            beq = -w(M_active);
-            M_inactive = ~M_active & z_inactive;            
-            Ain_fqp = [-M(M_inactive,z_inactive); -eye(n_z_inactive)];
-            bin_fqp = [w(M_inactive); -lb(z_inactive)];
+            Aeq = M(z_inactive,z_inactive); 
+            beq = -w(z_inactive);
+            Ain_fqp = -eye(n_z_inactive);
+            bin_fqp = -lb(z_inactive);
             QblkDiag = {eye(n_z_inactive)};
-            fqp = -0*obj.LCP_cache.data.z(z_inactive); % could used the previous solution here
-            % but it introduces unwanted hidden state
-%             fastqp_tic = tic;
+            fqp = zeros(n_z_inactive, 1);
             [z_,info_fqp] = fastQPmex(QblkDiag,fqp,Ain_fqp,bin_fqp,Aeq,beq,[]);
-%             fastqp_time = toc(fastqp_tic);
-%             fprintf('FastQP solve time: %2.5f\n',fastqp_time);
             QP_FAILED = info_fqp<0;
             if ~QP_FAILED
               z(z_inactive) = z_; 
@@ -608,24 +609,17 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
               % M(z_active,z_inactive)*z(z_inactive)+w(z_active) >= 0  % since we're assuming that z(z_active) == 0
               z_active = ~z_inactive(1:(nL+nP+nC));  % only look at joint limit, position, and normal variables since if cn_i = 0, 
               % then that's a solution and we don't care about the relative velocity \lambda_i
-              QP_FAILED = (~isempty(w(z_active)) && any(M(z_active,z_inactive)*z(z_inactive)+w(z_active) < 0)) || ...
-                any(((z(z_inactive)>lb(z_inactive)+1e-8) & (M(z_inactive, z_inactive)*z(z_inactive)+w(z_inactive)>1e-8)));
+              QP_FAILED1 = (~isempty(w(z_active)) && any(M(z_active,z_inactive)*z(z_inactive)+w(z_active) < 0));
+              QP_FAILED2 = any(((z(z_inactive)>lb(z_inactive)+1e-8) & (M(z_inactive, z_inactive)*z(z_inactive)+w(z_inactive)>1e-8)));
+              QP_FAILED = QP_FAILED1 || QP_FAILED2;
             end
           end
         end
-
+        
         if QP_FAILED 
             % then the active set has changed, call pathlcp
-            %path_tic = tic;
             z = pathlcp(M,w,lb,ub);
-  %             path_time = toc(path_tic);
-  %             fprintf('Path solve time: %2.5f\n',path_time);
             obj.LCP_cache.data.fastqp_active_set = [];
-%             if isempty(active_set_fail_count)
-%                active_set_fail_count = 1;
-%             else
-%                active_set_fail_count = active_set_fail_count + 1;
-%             end
         end
         % for debugging
         %cN = z(nL+nP+(1:nC))
@@ -660,7 +654,6 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
           end
           lcmgl.switchBuffers();
         end
-        
 
         obj.LCP_cache.data.z = z;
         obj.LCP_cache.data.Mqdn = Mqdn;
@@ -715,7 +708,6 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
           limits = sum(~possible_limit_indices);
           possible_limit_indices(~possible_limit_indices) = penetration(1:limits);
           possible_contact_indices(~possible_contact_indices) = penetration(limits+1:end);
-          
           obj.warning_manager.warnOnce('Drake:TimeSteppingRigidBodyManipulator:ResolvingLCP','This timestep violated our assumptions about which contacts could possibly become active in one timestep.  Consider reducing your dt.  If it seems to happen a lot, then please let us know about it.');
         else
           break;
@@ -1129,7 +1121,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
     end
 
     function ptr = getMexModelPtr(obj)
-      ptr = getMexModelPtr(obj.manip);
+      ptr = getMexModelPtr(obj.manip); 
     end
 
     function [phi,Jphi] = closestDistance(obj,varargin)
