@@ -2,7 +2,8 @@ classdef LCMCoordinateFrame < CoordinateFrame & LCMSubscriber & LCMPublisher
   
   methods
     function obj=LCMCoordinateFrame(name,lcmcoder_or_lcmtype_or_dim,prefix,coordinate_names_or_dim)
-      % @param coordinate_names is an optional input which is only used if
+      % @param name is name of LCM channel
+      % @param coordinate_names_or_dim is an optional input which is only used if
       % checkDependency('lcm') == false.  
       
       typecheck(name,'char');

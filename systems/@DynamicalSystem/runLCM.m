@@ -1,6 +1,11 @@
 function runLCM(obj,x0,options)
 % Runs the system as an lcm node.
 % 
+%  @param obj system to be run as lcm node.  For example, for a single robot may be a
+%  BotVisualizer, or CascadeSystem of BotVisualizer and AffineTransform.
+%  For multiple robots, visualizer should have a MultiCoordinateFrame as
+%  inputFrame.  
+%
 %  @param x0 initial conditions.  Use [] for the default initial
 %  conditions.
 %
