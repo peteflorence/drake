@@ -19,6 +19,7 @@ degree = vertcat(degree{:});
 clear degree_grid;
 
 phi = ones(size(degree,2),size(S,2));
+
 for i=1:size(degree,2)
   for j=1:length(basis_generators)
     phi(i,:) = phi(i,:).*(basis_generators{j}(S).^degree(j,i));
