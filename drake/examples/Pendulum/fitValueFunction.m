@@ -11,7 +11,7 @@ S = vertcat(S{:});
 clear Sgrid;
 
 basis_generators = { @(x)sin(x(1,:)), @(x)cos(x(1,:)), @(x)x(2,:) };
-degrees = { 0:2, 0:2, 0:2 };
+degrees = { 0:3, 0:3, 0:2 };
 degree_grid = cell(1,length(degrees));
 [degree_grid{:}] = ndgrid(degrees{:});
 degree = cellfun(@(a)reshape(a,1,[]),degree_grid,'UniformOutput',false);
