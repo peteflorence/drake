@@ -57,4 +57,5 @@ while (1)
   V2_indices = ~V1_indices;
 end
 
+disp('Done');
 
