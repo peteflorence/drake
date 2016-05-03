@@ -22,17 +22,22 @@ classdef TwoValueFunctionController < DrakeSystem
         theta_dot = u(2);
         S_sample = [theta theta_dot]';
         
-        % determine my feature vector, phi_sample_gradient
+        % determine my feature vector, phi_sample for computing V
+        phi_sample = obj.generatePhiSample(S_sample);
+        
+        % determine my feature vector, phi_sample_gradient for computing
+        % the gradient
         phi_sample_gradient = obj.generatePhiSampleGradient(S_sample);
 
-        % decide if we should use V1 or V2
-        V_closer = obj.computeCloserV(S_sample);
+        % compute V1 and V2
+        V1 = obj.data.alpha1'*phi_sample;
+        V2 = obj.data.alpha2'*phi_sample;
         
-        % use weights from correct V
-        if V_closer == 1
-            gradient_wrt_theta_dot = obj.data.alpha1'*phi_sample; 
+        % use weights from min(V1, V2)
+        if V1 < V2
+            gradient_wrt_theta_dot = obj.data.alpha1'*phi_sample_gradient; 
         else
-            gradient_wrt_theta_dot = obj.data.alpha2'*phi_sample; 
+            gradient_wrt_theta_dot = obj.data.alpha2'*phi_sample_gradient; 
         end
         control_input = -gradient_wrt_theta_dot;
         
@@ -66,10 +71,8 @@ classdef TwoValueFunctionController < DrakeSystem
     function phi_sample = generatePhiSample(obj, S_sample)
         phi_sample = ones(size(obj.data.degree,2),1);
         for i=1:size(obj.data.degree,2)
-            for j=1:length(obj.data.basis_generators)
-                
-                phi_sample(i) = phi_sample(i).*(obj.data.basis_generators{j}(S_sample).^obj.data.degree(j,i));
-                
+            for j=1:length(obj.data.basis_generators)   
+                phi_sample(i) = phi_sample(i).*(obj.data.basis_generators{j}(S_sample).^obj.data.degree(j,i));  
             end
         end
     end
@@ -104,10 +107,10 @@ classdef TwoValueFunctionController < DrakeSystem
       sys = feedback(pd,c);
       
 %       for i=1:5
-        
+      
         xtraj = simulate(sys,[0 6], [0.05 -0.02]');
-        playback(pv, xtraj);
-%         playbackAVI(pv,xtraj, ['swingup_TwoValueFunction' num2str(i)]);
+%         playback(pv, xtraj);
+        playbackAVI(pv,xtraj, ['swingup_TwoValueFunction' num2str(i)]);
         figure(2); fnplt(xtraj);
 %       end
     end
